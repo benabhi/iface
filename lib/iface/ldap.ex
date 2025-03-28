@@ -6,6 +6,61 @@ defmodule Iface.Ldap do
 
   """
 
+  @mail_quota 230
+  @default_groups ["Domain Users", "impresion"]
+
+  def create_user(username, password, name, lastname, groups \\ [], samba \\ true, mail \\ true) do
+    objectclass = [
+      "top",
+      "policeOrgPerson",
+      "posixAccount",
+      "inetOrgPerson",
+      "organizationalPerson",
+      "person",
+      # "CourierMailAccount",
+      # "fetchmailUser",
+      # "usereboxmail",
+      "passwordHolder"
+    ]
+
+    run_as_admin(fn ->
+      Paddle.add(
+        [uid: username, ou: "Users"],
+        # uid: username,
+        objectclass: objectclass,
+        cn: "#{name} #{lastname}",
+        sn: lastname,
+        givenName: name,
+        userPassword: hash(password),
+        homeDirectory: "/home/#{username}",
+        loginShell: "/bin/bash",
+        mail: "#{username}@example.com",
+        mailQuota: @mail_quota
+      )
+    end)
+  end
+
+  def get_all_users() do
+    run_as_admin(fn ->
+      # * NOTA: Fue necesario ejecutar el get con un timeout por eso no use
+      # *       Paddle.get y en su lugar use GenServer.call, por otro lado
+      # *       el timeout del config no funciono :S
+      case GenServer.call(
+             Paddle,
+             {:get, [objectClass: "posixAccount"], [ou: "Users"], :base},
+             :infinity
+           ) do
+        {:ok, entries} ->
+          {:ok,
+           entries
+           |> Enum.map(&parse_ldap_map_result/1)}
+
+        err ->
+          err
+      end
+    end)
+  end
+
   @spec user_list() :: {:ok, list(String.t())} | {:error, String.t()}
   @doc """
   Obtiene la lista de usuarios
@@ -17,22 +72,15 @@ defmodule Iface.Ldap do
       true
   """
   def user_list() do
-    run_as_admin(fn ->
-      # * NOTA: Fue necesario ejecutar el get con un timeout por eso no use
-      # *       Paddle.get y en su lugar use GenServer.call, por otro lado
-      # *       el timeout del config no funciono :S
-      case GenServer.call(
-             Paddle,
-             {:get, [objectClass: "posixAccount"], [ou: "Users"], :base},
-             10000
-           ) do
-        {:ok, entries} ->
-          {:ok, Enum.map(entries, &hd(&1["uid"]))}
+    case get_all_users() do
+      {:ok, entries} ->
+        {:ok,
+         entries
+         |> Enum.map(&hd(&1["uid"]))}
 
-        err ->
-          err
-      end
-    end)
+      err ->
+        err
+    end
   end
 
   @spec user_exists?(String.t()) :: boolean
@@ -41,19 +89,24 @@ defmodule Iface.Ldap do
 
   ## Examples
 
-      iex> Iface.Ldap.user_exists?("netsistpolrn")
+      iex> Iface.Ldap.user_exists?("jcbatman")
       true
   """
   def user_exists?(username) do
     run_as_admin(fn ->
       case user_list() do
-        {:ok, users} -> users |> Enum.member?(username)
-        err -> err
+        {:ok, users} ->
+          users
+          |> Enum.member?(username)
+
+        err ->
+          err
       end
     end)
   end
 
   @spec user_info(String.t()) :: {:ok, map()} | {:error, String.t()}
+  @spec user_info(String.t(), attributes: list(String.t())) :: {:ok, map()} | {:error, String.t()}
   @doc """
   Obtiene la informacion de un usuario
   """
@@ -61,12 +114,26 @@ defmodule Iface.Ldap do
     run_as_admin(fn ->
       case Paddle.get(base: [ou: "Users"], filter: [uid: username]) do
         {:ok, entries} ->
-          {:ok, hd(entries)}
+          {:ok,
+           entries
+           |> hd
+           |> parse_ldap_map_result}
 
         err ->
           err
       end
     end)
+  end
+
+  def user_info(username, attributes: attrs) do
+    case user_info(username) do
+      {:ok, user} ->
+        user
+        |> Map.take(attrs)
+
+      err ->
+        err
+    end
   end
 
   @spec change_password(String.t(), String.t()) :: :ok | {:error, String.t()}
@@ -81,7 +148,7 @@ defmodule Iface.Ldap do
     end)
   end
 
-  @spec user_groups(String.t()) :: list(String.t())
+  @spec user_groups(String.t()) :: {:ok, list(String.t())} | {:error, String.t()}
   @doc """
   Obtiene los grupos de un usuario
   """
@@ -89,7 +156,9 @@ defmodule Iface.Ldap do
     run_as_admin(fn ->
       case Paddle.get(base: [ou: "Groups"], filter: [memberUid: username]) do
         {:ok, entries} ->
-          Enum.map(entries, &hd(&1["cn"]))
+          {:ok,
+           entries
+           |> Enum.map(&hd(&1["cn"]))}
 
         err ->
           err
@@ -102,7 +171,14 @@ defmodule Iface.Ldap do
   Verifica si un usuario pertenece a un grupo
   """
   def user_in_group?(username, group) do
-    Enum.member?(user_groups(username), group)
+    case user_groups(username) do
+      {:ok, groups} ->
+        groups
+        |> Enum.member?(group)
+
+      err ->
+        err
+    end
   end
 
   @spec authenticate?(String.t(), String.t()) :: boolean
@@ -111,7 +187,7 @@ defmodule Iface.Ldap do
 
   ## Examples
 
-      iex> Iface.Ldap.authenticate?("netsistpolrn", "daledaledale123")
+      iex> Iface.Ldap.authenticate?("jcbatman", "123456")
       true
   """
   def authenticate?(username, password) do
@@ -133,6 +209,8 @@ defmodule Iface.Ldap do
     end
   end
 
+  # HELPERS
+
   # TODO: Parametro opcional para seleccionar otro Hash
   defp hash(password) do
     # Genera un salt aleatorio de 4 bytes
@@ -143,5 +221,27 @@ defmodule Iface.Ldap do
     hash = "{SSHA}" <> Base.encode64(hash <> salt)
     # Elimina los caracteres "=" del final
     String.trim_trailing(hash, "=")
+  end
+
+  # Los mapas que vienen de LDAP tienen el formato {key: [value]} en vez de
+  # {key: value}, esta funcion lo convierte pero solo si el value es una lista
+  # de un solo elemento.
+  defp parse_ldap_map_result(result) do
+    result
+    |> Enum.map(fn {key, value} ->
+      new_value =
+        case value do
+          [single] -> single
+          _ -> value
+        end
+
+      {key, new_value}
+    end)
+    |> Enum.into(%{})
+  end
+
+  # TODO: Ver si hace falta
+  defp get_last_uid() do
+    :todo
   end
 end
