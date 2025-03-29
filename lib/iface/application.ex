@@ -7,10 +7,6 @@ defmodule Iface.Application do
 
   @impl true
   def start(_type, _args) do
-    # Carga las variables del archivo .env
-    Dotenv.load()
-    Mix.Task.run("loadconfig")
-
     children = [
       # Starts a worker by calling: Iface.Worker.start_link(arg)
       # {Iface.Worker, arg}
