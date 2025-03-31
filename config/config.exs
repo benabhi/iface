@@ -7,4 +7,4 @@ config :paddle, Paddle,
   base: "dc=vs-zmaster,dc=policia,dc=rionegro,dc=gov,dc=ar",
   ssl: false,
   port: 389,
-  timeout: 100_000
+  timeout: nil

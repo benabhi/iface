@@ -177,14 +177,7 @@ defmodule Iface.Ldap.Users do
   def user_get_all(ldap_client) do
     Ldap.run_as_admin(
       fn ->
-        # * NOTA: Fue necesario ejecutar el get con un timeout por eso no use
-        # *       Paddle.get y en su lugar use GenServer.call, por otro lado
-        # *       el timeout del config (de Paddle) no funciono :S
-        case GenServer.call(
-               ldap_client,
-               {:get, [objectClass: "posixAccount"], [ou: "Users"], :base},
-               :infinity
-             ) do
+        case ldap_client.get(base: [ou: "Users"]) do
           {:ok, entries} ->
             {:ok,
              entries
@@ -260,6 +253,7 @@ defmodule Iface.Ldap.Users do
       fn ->
         case ldap_client.get(base: [ou: "Users"], filter: [uid: username]) do
           {:ok, entries} ->
+            # ! TODO: case nil?
             {:ok,
              entries
              |> hd
@@ -453,6 +447,7 @@ defmodule Iface.Ldap.Users do
     parsed_uids = fn users ->
       users
       |> Enum.map(fn user -> user["uidNumber"] end)
+      |> Enum.reject(&is_nil/1)
       |> Enum.map(&String.to_integer/1)
       |> Enum.max()
     end
