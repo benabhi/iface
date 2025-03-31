@@ -1,11 +1,7 @@
 defmodule Iface.Ldap.Users do
   @moduledoc """
     Este modulo contiene funciones para interactuar con los usuarios de ldap
-
-    Listado de funciones sus usos:
-
-    # ! TODO: Completar el listado
-
+    ! # TODO: Terminar de documentar.
   """
 
   alias Iface.Ldap
@@ -79,7 +75,7 @@ defmodule Iface.Ldap.Users do
 
       # Calcular atributos comunes
       user_password = Utils.hash_password(password)
-      last_uid = user_last_uid(true, ldap_client)
+      {:ok, last_uid} = user_last_uid(true, ldap_client)
       samba_sid = "S-1-5-21-2536628940-703160423-1994053749"
       domain = "policia.rionegro.gov.ar"
 
@@ -165,7 +161,7 @@ defmodule Iface.Ldap.Users do
 
   @spec user_get_all(module()) :: {:ok, [map()]} | Ldap.ldap_error()
   @doc ~S"""
-  Obtiene la informacion de todos los usuarios
+  Obtiene la informacion de todos los usuarios de ldap
 
   ## Examples
 
@@ -179,9 +175,16 @@ defmodule Iface.Ldap.Users do
       fn ->
         case ldap_client.get(base: [ou: "Users"]) do
           {:ok, entries} ->
-            {:ok,
-             entries
-             |> Enum.map(&Utils.flatten_lists_values/1)}
+            case entries do
+              x when x == [] or x == nil ->
+                {:ok, []}
+
+              _ ->
+                {:ok,
+                 entries
+                 |> Stream.map(&Utils.flatten_lists_values/1)
+                 |> Enum.to_list()}
+            end
 
           err ->
             err
@@ -193,7 +196,7 @@ defmodule Iface.Ldap.Users do
 
   @spec user_list(module()) :: {:ok, [String.t()]} | Ldap.ldap_error()
   @doc """
-  Obtiene la lista de usuarios
+  Obtiene la lista de usuarios de ldap
 
   ## Examples
 
@@ -215,7 +218,7 @@ defmodule Iface.Ldap.Users do
 
   @spec user_exists?(String.t(), module()) :: boolean()
   @doc """
-  Verifica si un usuario existe
+  Verifica si un usuario existe en ldap
 
   ## Examples
 
@@ -240,7 +243,7 @@ defmodule Iface.Ldap.Users do
 
   @spec user_info(String.t(), module()) :: {:ok, map()} | Ldap.ldap_error()
   @doc ~S"""
-  Obtiene la informacion de un usuario
+  Obtiene la informacion de un usuario de ldap
 
   ## Examples
 
@@ -269,7 +272,7 @@ defmodule Iface.Ldap.Users do
 
   @spec user_change_password(String.t(), String.t(), module()) :: :ok | Ldap.ldap_error()
   @doc """
-  Cambia la password de un usuario
+  Cambia la password de un usuario de ldap
 
   ## Examples
 
@@ -292,7 +295,7 @@ defmodule Iface.Ldap.Users do
 
   @spec user_add_to_group(String.t(), String.t(), module()) :: :ok | Ldap.ldap_error()
   @doc """
-  Agrega un usuario a un grupo
+  Agrega un usuario a un grupo ldap
 
   ## Examples
 
@@ -310,7 +313,7 @@ defmodule Iface.Ldap.Users do
 
   @spec user_groups(String.t(), module()) :: {:ok, [String.t()]} | Ldap.ldap_error()
   @doc """
-  Obtiene los grupos de un usuario
+  Obtiene los grupos de un usuario ldap
 
   ## Examples
 
@@ -338,7 +341,7 @@ defmodule Iface.Ldap.Users do
 
   @spec user_in_groups?(String.t(), [String.t()], module()) :: boolean()
   @doc """
-  Verifica si un usuario pertenece a un grupo o conjunto de grupos
+  Verifica si un usuario pertenece a un grupo o conjunto de grupos ldap
 
   ## Examples
 
@@ -360,7 +363,7 @@ defmodule Iface.Ldap.Users do
   end
 
   @doc """
-  Quita un usuario de un grupo
+  Quita un usuario de un grupo ldap
 
   ## Examples
 
@@ -403,7 +406,7 @@ defmodule Iface.Ldap.Users do
 
   @spec user_modify(String.t(), [{atom(), String.t()}], module()) :: :ok | Ldap.ldap_error()
   @doc """
-  Modifica un usuario
+  Modifica un usuario en ldap
 
   ## Examples
 
@@ -421,7 +424,7 @@ defmodule Iface.Ldap.Users do
 
   @spec user_delete(String.t(), module()) :: :ok | Ldap.ldap_error()
   @doc """
-  Elimina un usuario
+  Elimina un usuario en ldap
 
   ## Examples
 
@@ -438,9 +441,11 @@ defmodule Iface.Ldap.Users do
   end
 
   @doc """
-  Obtiene el uidNumber del ultimo usuario creado
+  Obtiene el uidNumber del ultimo usuario creado en ldap
 
-  # ! TODO: Doctest, y Verificar si realmenter el numero es el ultimo
+    iex> {:ok, last_uid} = Iface.Ldap.Users.user_last_uid(Paddle)
+    iex> is_integer(last_uid)
+    true
   """
   def user_last_uid(next \\ true, ldap_client) do
     # Funcion anonima para evitar repeticion
@@ -454,14 +459,15 @@ defmodule Iface.Ldap.Users do
 
     case user_get_all(ldap_client) do
       {:ok, users} ->
-        if next do
-          users
-          |> parsed_uids.()
-          |> Kernel.+(1)
-        else
-          users
-          |> parsed_uids.()
-        end
+        {:ok,
+         if next do
+           users
+           |> parsed_uids.()
+           |> Kernel.+(1)
+         else
+           users
+           |> parsed_uids.()
+         end}
 
       err ->
         err

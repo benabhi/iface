@@ -22,8 +22,10 @@ defmodule Iface.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:paddle, "~> 0.1.0"},
-      {:dotenv, "~> 3.0.0"}
+      {:dotenv, "~> 3.0.0"},
+      {:paddle, git: "https://github.com/benabhi/paddle.git"},
+      {:ex_doc, "~> 0.34", only: :dev, runtime: false},
+      {:mock, "~> 0.3.0", only: :test}
       # {:dep_from_hexpm, "~> 0.3.0"},
       # {:dep_from_git, git: "https://github.com/elixir-lang/my_dep.git", tag: "0.1.0"}
     ]
